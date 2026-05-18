@@ -24,6 +24,10 @@ _Avoid_: Window, workspace
 A rectangular terminal area inside a tab.
 _Avoid_: Split, terminal
 
+**Pane Runtime**:
+The in-process module that coordinates one pane's terminal session, parsed screen state, resize behavior, and redraw needs.
+_Avoid_: Bare Bones Terminal runtime, terminal service
+
 **Terminal Session**:
 A running shell or terminal program attached to exactly one pane.
 _Avoid_: Pane, process, tab
@@ -37,6 +41,7 @@ _Avoid_: AI status, notification, job state
 - A **Terminal Emulator** starts with a **Bare Bones Terminal** before adding workspace surfaces.
 - A **Workspace** contains one or more **Tabs**.
 - A **Tab** contains one or more **Panes**.
+- A **Pane** has one **Pane Runtime** while its terminal session is running.
 - A **Pane** owns exactly one **Terminal Session**.
 - A **Terminal Session** exists only while the application process is running.
 - A **Pane** exposes an **Attention State** for agent-focused monitoring.

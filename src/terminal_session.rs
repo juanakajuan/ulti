@@ -1,18 +1,20 @@
 //! PTY-backed terminal session lifecycle and sizing helpers.
 
 use std::{
+    error::Error,
+    fmt,
     io::{Read, Write},
     thread,
 };
 
 use anyhow::{Context, Result};
-use crossbeam_channel::{Receiver, Sender, unbounded};
+use crossbeam_channel::{Receiver, Sender, TryRecvError, unbounded};
 use portable_pty::{Child, CommandBuilder, NativePtySystem, PtySize, PtySystem};
 
 use crate::renderer::{CELL_HEIGHT, CELL_WIDTH, PADDING};
 
 /// Terminal dimensions in character cells and backing pixels.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct TerminalSize {
     /// Number of terminal rows visible to the shell.
     pub(crate) rows: u16,
@@ -39,13 +41,72 @@ impl TerminalSize {
 /// Channels and child process handle for one running terminal session.
 pub(crate) struct TerminalHandle {
     /// Sends raw bytes from window input into the PTY writer thread.
-    pub(crate) input_tx: Sender<Vec<u8>>,
+    input_tx: Sender<Vec<u8>>,
     /// Receives raw bytes read from the PTY reader thread.
-    pub(crate) output_rx: Receiver<Vec<u8>>,
+    output_rx: Receiver<Vec<u8>>,
     /// Sends resize requests from the window event loop into the PTY resizer thread.
-    pub(crate) resize_tx: Sender<TerminalSize>,
+    resize_tx: Sender<TerminalSize>,
     /// Keeps the spawned shell alive for as long as the handle is retained.
     _child: Box<dyn Child + Send + Sync>,
+}
+
+/// Failures that can occur while communicating with a terminal session.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TerminalSessionError {
+    /// The terminal input writer is no longer accepting bytes.
+    InputClosed,
+    /// The terminal output reader has closed.
+    OutputClosed,
+    /// The terminal resize channel is no longer accepting sizes.
+    ResizeClosed,
+}
+
+impl fmt::Display for TerminalSessionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let message = match self {
+            Self::InputClosed => "terminal input stream closed",
+            Self::OutputClosed => "terminal output stream closed",
+            Self::ResizeClosed => "terminal resize stream closed",
+        };
+
+        formatter.write_str(message)
+    }
+}
+
+impl Error for TerminalSessionError {}
+
+/// Interface used by pane runtimes to communicate with a terminal session.
+pub(crate) trait TerminalSession {
+    /// Writes terminal input bytes into the session.
+    fn write_input(&mut self, bytes: Vec<u8>) -> std::result::Result<(), TerminalSessionError>;
+
+    /// Attempts to read one pending output chunk without blocking.
+    fn try_read_output(&mut self) -> std::result::Result<Option<Vec<u8>>, TerminalSessionError>;
+
+    /// Requests a terminal session resize.
+    fn resize(&mut self, size: TerminalSize) -> std::result::Result<(), TerminalSessionError>;
+}
+
+impl TerminalSession for TerminalHandle {
+    fn write_input(&mut self, bytes: Vec<u8>) -> std::result::Result<(), TerminalSessionError> {
+        self.input_tx
+            .send(bytes)
+            .map_err(|_| TerminalSessionError::InputClosed)
+    }
+
+    fn try_read_output(&mut self) -> std::result::Result<Option<Vec<u8>>, TerminalSessionError> {
+        match self.output_rx.try_recv() {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(TryRecvError::Empty) => Ok(None),
+            Err(TryRecvError::Disconnected) => Err(TerminalSessionError::OutputClosed),
+        }
+    }
+
+    fn resize(&mut self, size: TerminalSize) -> std::result::Result<(), TerminalSessionError> {
+        self.resize_tx
+            .send(size)
+            .map_err(|_| TerminalSessionError::ResizeClosed)
+    }
 }
 
 /// Starts a shell attached to a PTY and returns channel handles for app I/O.

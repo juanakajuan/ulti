@@ -7,6 +7,8 @@ pub mod app;
 mod font;
 /// Keyboard input translation from window events into terminal byte sequences.
 mod input;
+/// Runtime coordination for one pane's terminal session and parser state.
+mod pane_runtime;
 /// Framebuffer renderer for the parsed terminal screen grid.
 mod renderer;
 /// PTY-backed terminal session process and channel management.
