@@ -4,3 +4,19 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+# Error handling for app startup failures with readable context.
+anyhow = "1.0"
+# Thread-safe channels for PTY input, output, and resize messages.
+crossbeam-channel = "0.5"
+# Finds an installed system monospace font.
+fontdb = "0.16"
+# Rasterizes font glyphs into pixels for custom text drawing.
+fontdue = "0.9"
+# GPU-backed framebuffer that the terminal renderer draws into.
+pixels = "0.13"
+# Creates the pseudo-terminal, spawns the shell, and resizes the PTY.
+portable-pty = "0.8"
+# Parses terminal escape sequences and maintains the terminal screen grid.
+vt100 = "0.15"
+# Creates the native window and handles keyboard/window events.
+winit = "0.28"
