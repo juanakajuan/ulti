@@ -1,3 +1,5 @@
+//! Native window setup and event loop for the bare bones terminal surface.
+
 use anyhow::{Context, Result};
 use pixels::{Pixels, SurfaceTexture};
 use vt100::Parser;
@@ -15,10 +17,16 @@ use crate::{
     terminal_session::{spawn_terminal, terminal_size_for_window},
 };
 
+/// Initial terminal width, in character cells, before the window is resized.
 const INITIAL_COLS: u16 = 100;
+/// Initial terminal height, in character cells, before the window is resized.
 const INITIAL_ROWS: u16 = 32;
 
 /// Starts the Ulti application window, terminal session, and render loop.
+///
+/// Returns an error if startup cannot create the native window, framebuffer, font,
+/// or PTY-backed shell. Runtime render and resize failures are reported to stderr
+/// before the event loop exits.
 pub fn run() -> Result<()> {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()

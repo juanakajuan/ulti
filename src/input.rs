@@ -1,6 +1,11 @@
+//! Keyboard translation from winit events into terminal control bytes.
+
 use winit::event::{KeyboardInput, ModifiersState, VirtualKeyCode};
 
 /// Converts a winit keyboard event into terminal input bytes.
+///
+/// Printable text is handled separately through `ReceivedCharacter`; this helper
+/// only maps control combinations and non-printable keys such as arrows.
 pub(crate) fn key_bytes(input: KeyboardInput, modifiers: ModifiersState) -> Option<Vec<u8>> {
     let key = input.virtual_keycode?;
 
@@ -23,6 +28,7 @@ pub(crate) fn key_bytes(input: KeyboardInput, modifiers: ModifiersState) -> Opti
     Some(bytes.to_vec())
 }
 
+/// Maps Ctrl+A through Ctrl+Z into ASCII control bytes.
 fn ctrl_key_bytes(key: VirtualKeyCode) -> Option<Vec<u8>> {
     let byte = match key {
         VirtualKeyCode::A => 0x01,

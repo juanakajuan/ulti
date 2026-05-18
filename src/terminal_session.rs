@@ -1,3 +1,5 @@
+//! PTY-backed terminal session lifecycle and sizing helpers.
+
 use std::{
     io::{Read, Write},
     thread,
@@ -12,21 +14,33 @@ use crate::renderer::{CELL_HEIGHT, CELL_WIDTH, PADDING};
 /// Terminal dimensions in character cells and backing pixels.
 #[derive(Clone, Copy)]
 pub(crate) struct TerminalSize {
+    /// Number of terminal rows visible to the shell.
     pub(crate) rows: u16,
+    /// Number of terminal columns visible to the shell.
     pub(crate) cols: u16,
+    /// Window width reported to the PTY, capped to the PTY API's `u16` range.
     pub(crate) pixel_width: u16,
+    /// Window height reported to the PTY, capped to the PTY API's `u16` range.
     pub(crate) pixel_height: u16,
 }
 
 /// Channels and child process handle for one running terminal session.
 pub(crate) struct TerminalHandle {
+    /// Sends raw bytes from window input into the PTY writer thread.
     pub(crate) input_tx: Sender<Vec<u8>>,
+    /// Receives raw bytes read from the PTY reader thread.
     pub(crate) output_rx: Receiver<Vec<u8>>,
+    /// Sends resize requests from the window event loop into the PTY resizer thread.
     pub(crate) resize_tx: Sender<TerminalSize>,
+    /// Keeps the spawned shell alive for as long as the handle is retained.
     _child: Box<dyn Child + Send + Sync>,
 }
 
 /// Starts a shell attached to a PTY and returns channel handles for app I/O.
+///
+/// The session uses `$SHELL` when present and falls back to `/bin/fish`. Three
+/// background threads bridge app input, PTY output, and resize messages because
+/// the native window loop must stay responsive.
 pub(crate) fn spawn_terminal(size: TerminalSize) -> Result<TerminalHandle> {
     let pty_system = NativePtySystem::default();
     let pair = pty_system
@@ -102,6 +116,9 @@ pub(crate) fn spawn_terminal(size: TerminalSize) -> Result<TerminalHandle> {
 }
 
 /// Converts a window size into terminal cells and PTY pixel dimensions.
+///
+/// The returned row and column counts always have at least one cell, even when
+/// the window is smaller than the configured padding and cell size.
 pub(crate) fn terminal_size_for_window(width: u32, height: u32) -> TerminalSize {
     let usable_width = width.saturating_sub(PADDING * 2);
     let usable_height = height.saturating_sub(PADDING * 2);

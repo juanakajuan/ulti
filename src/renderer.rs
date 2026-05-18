@@ -1,16 +1,29 @@
+//! Pixel framebuffer renderer for the current terminal screen contents.
+
 use fontdue::Font;
 use vt100::Parser;
 
+/// Fixed terminal cell width in pixels.
 pub(crate) const CELL_WIDTH: u32 = 9;
+/// Fixed terminal cell height in pixels.
 pub(crate) const CELL_HEIGHT: u32 = 18;
+/// Empty border around the terminal grid in pixels.
 pub(crate) const PADDING: u32 = 12;
 
+/// Font rasterization size used for each terminal cell.
 const FONT_SIZE: f32 = 15.0;
+/// RGBA background color for the terminal surface.
 const BACKGROUND: [u8; 4] = [18, 18, 24, 255];
+/// RGBA foreground color for rendered glyphs.
 const FOREGROUND: [u8; 4] = [225, 229, 238, 255];
+/// RGBA fill color for the terminal cursor cell.
 const CURSOR: [u8; 4] = [120, 170, 255, 255];
 
 /// Draws the parsed terminal screen into the RGBA framebuffer.
+///
+/// The frame is cleared first, then each non-empty terminal cell is rasterized
+/// with a fixed-width pen advance. The cursor is drawn as a filled cell before
+/// the glyph so text remains visible on top of it.
 pub(crate) fn draw_terminal(
     frame: &mut [u8],
     width: u32,
@@ -62,6 +75,7 @@ pub(crate) fn draw_terminal(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Rasterizes UTF-8 text into the framebuffer at a terminal cell origin.
 fn draw_text(frame: &mut [u8], width: u32, height: u32, font: &Font, text: &str, x: u32, y: u32) {
     let mut pen_x = x;
     for character in text.chars() {
@@ -97,6 +111,7 @@ fn draw_text(frame: &mut [u8], width: u32, height: u32, font: &Font, text: &str,
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Fills a clipped rectangle in the framebuffer.
 fn fill_rect(
     frame: &mut [u8],
     width: u32,
@@ -117,6 +132,7 @@ fn fill_rect(
     }
 }
 
+/// Alpha-blends one foreground color into an existing RGBA framebuffer pixel.
 fn blend_pixel(pixel: &mut [u8], color: [u8; 4], alpha: u8) {
     let alpha = u16::from(alpha);
     let inverse_alpha = 255 - alpha;

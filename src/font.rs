@@ -1,8 +1,13 @@
+//! System font discovery for terminal text rendering.
+
 use anyhow::{Context, Result, anyhow};
 use fontdb::{Database, Family, Query};
 use fontdue::{Font, FontSettings};
 
 /// Finds and loads a system monospace font for terminal rendering.
+///
+/// Preferred fonts are tried first for predictable metrics, then the platform's
+/// generic monospace family is used as a fallback.
 pub(crate) fn load_monospace_font() -> Result<Font> {
     let mut database = Database::new();
     database.load_system_fonts();
