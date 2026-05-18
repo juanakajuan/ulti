@@ -1,19 +1,19 @@
-# Issue tracker: Local Markdown
+# Issue tracker: GitHub
 
-Issues and PRDs for this repo live as markdown files in `.scratch/`.
+Issues and PRDs for this repo live in GitHub under `juanakajuan/ulti`.
 
 ## Conventions
 
-- One feature per directory: `.scratch/<feature-slug>/`
-- The PRD is `.scratch/<feature-slug>/PRD.md`
-- Implementation issues are `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01`
-- Triage state is recorded as a `Status:` line near the top of each issue file (see `triage-labels.md` for the role strings)
-- Comments and conversation history append to the bottom of the file under a `## Comments` heading
+- Use GitHub Issues for implementation work, bugs, and follow-ups.
+- Use GitHub Issues for PRDs unless the user explicitly asks for a different GitHub artifact.
+- Apply triage labels directly on GitHub Issues. See `triage-labels.md` for the label vocabulary.
+- Add comments and conversation history as GitHub issue comments.
+- Link related issues and PRDs in the issue body.
 
 ## When a skill says "publish to the issue tracker"
 
-Create a new file under `.scratch/<feature-slug>/` (creating the directory if needed).
+Create a GitHub Issue in `juanakajuan/ulti` using `gh issue create`. Include the PRD or issue content in the body and apply the appropriate labels.
 
 ## When a skill says "fetch the relevant ticket"
 
-Read the file at the referenced path. The user will normally pass the path or the issue number directly.
+Fetch the GitHub Issue from `juanakajuan/ulti` using `gh issue view`. The user will normally pass the issue URL or number directly.
