@@ -24,6 +24,18 @@ pub(crate) struct TerminalSize {
     pub(crate) pixel_height: u16,
 }
 
+impl TerminalSize {
+    /// Converts the app terminal size into the portable PTY API's size type.
+    fn to_pty_size(self) -> PtySize {
+        PtySize {
+            rows: self.rows,
+            cols: self.cols,
+            pixel_width: self.pixel_width,
+            pixel_height: self.pixel_height,
+        }
+    }
+}
+
 /// Channels and child process handle for one running terminal session.
 pub(crate) struct TerminalHandle {
     /// Sends raw bytes from window input into the PTY writer thread.
@@ -43,28 +55,23 @@ pub(crate) struct TerminalHandle {
 /// the native window loop must stay responsive.
 pub(crate) fn spawn_terminal(size: TerminalSize) -> Result<TerminalHandle> {
     let pty_system = NativePtySystem::default();
-    let pair = pty_system
-        .openpty(PtySize {
-            rows: size.rows,
-            cols: size.cols,
-            pixel_width: size.pixel_width,
-            pixel_height: size.pixel_height,
-        })
+    let pty_pair = pty_system
+        .openpty(size.to_pty_size())
         .context("failed to open PTY")?;
 
     let shell = std::env::var("SHELL").unwrap_or_else(|_| String::from("/bin/fish"));
     let command = CommandBuilder::new(shell);
-    let child = pair
+    let child = pty_pair
         .slave
         .spawn_command(command)
         .context("failed to spawn shell")?;
-    drop(pair.slave);
+    drop(pty_pair.slave);
 
-    let mut reader = pair
+    let mut reader = pty_pair
         .master
         .try_clone_reader()
         .context("failed to clone PTY reader")?;
-    let mut writer = pair
+    let mut writer = pty_pair
         .master
         .take_writer()
         .context("failed to take PTY writer")?;
@@ -98,12 +105,7 @@ pub(crate) fn spawn_terminal(size: TerminalSize) -> Result<TerminalHandle> {
 
     thread::spawn(move || {
         while let Ok(size) = resize_rx.recv() {
-            let _ = pair.master.resize(PtySize {
-                rows: size.rows,
-                cols: size.cols,
-                pixel_width: size.pixel_width,
-                pixel_height: size.pixel_height,
-            });
+            let _ = pty_pair.master.resize(size.to_pty_size());
         }
     });
 

@@ -1,20 +1,21 @@
 //! Native window setup and event loop for the bare bones terminal surface.
 
 use anyhow::{Context, Result};
+use crossbeam_channel::{Receiver, Sender};
 use pixels::{Pixels, SurfaceTexture};
 use vt100::Parser;
 use winit::{
     dpi::LogicalSize,
     event::{ElementState, Event, ModifiersState, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    window::WindowBuilder,
+    window::{Window, WindowBuilder},
 };
 
 use crate::{
     font::load_monospace_font,
     input::key_bytes,
     renderer::{CELL_HEIGHT, CELL_WIDTH, PADDING, draw_terminal},
-    terminal_session::{spawn_terminal, terminal_size_for_window},
+    terminal_session::{TerminalSize, spawn_terminal, terminal_size_for_window},
 };
 
 /// Initial terminal width, in character cells, before the window is resized.
@@ -53,52 +54,50 @@ pub fn run() -> Result<()> {
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
 
-        while let Ok(bytes) = terminal.output_rx.try_recv() {
-            parser.process(&bytes);
-            window.request_redraw();
-        }
+        drain_terminal_output(&terminal.output_rx, &mut parser, &window);
 
         match event {
-            Event::WindowEvent { event, .. } => match event {
-                WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
-                WindowEvent::Resized(size) => {
-                    framebuffer_width = size.width;
-                    framebuffer_height = size.height;
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => *control_flow = ControlFlow::Exit,
+            Event::WindowEvent {
+                event: WindowEvent::Resized(size),
+                ..
+            } => {
+                framebuffer_width = size.width;
+                framebuffer_height = size.height;
 
-                    if let Err(error) = pixels.resize_surface(size.width, size.height) {
-                        eprintln!("resize surface failed: {error}");
-                        *control_flow = ControlFlow::Exit;
-                        return;
-                    }
+                if !resize_framebuffer(&mut pixels, size.width, size.height) {
+                    *control_flow = ControlFlow::Exit;
+                    return;
+                }
 
-                    if let Err(error) = pixels.resize_buffer(size.width, size.height) {
-                        eprintln!("resize buffer failed: {error}");
-                        *control_flow = ControlFlow::Exit;
-                        return;
-                    }
-
-                    let new_terminal_size = terminal_size_for_window(size.width, size.height);
-                    parser.set_size(new_terminal_size.rows, new_terminal_size.cols);
-                    let _ = terminal.resize_tx.send(new_terminal_size);
-                    window.request_redraw();
+                resize_terminal(
+                    &terminal.resize_tx,
+                    &mut parser,
+                    terminal_size_for_window(size.width, size.height),
+                );
+                window.request_redraw();
+            }
+            Event::WindowEvent {
+                event: WindowEvent::ModifiersChanged(next_modifiers),
+                ..
+            } => modifiers = next_modifiers,
+            Event::WindowEvent {
+                event: WindowEvent::ReceivedCharacter(character),
+                ..
+            } if !modifiers.ctrl() && !character.is_control() => {
+                send_character_input(&terminal.input_tx, character);
+            }
+            Event::WindowEvent {
+                event: WindowEvent::KeyboardInput { input, .. },
+                ..
+            } if input.state == ElementState::Pressed => {
+                if let Some(bytes) = key_bytes(input, modifiers) {
+                    let _ = terminal.input_tx.send(bytes);
                 }
-                WindowEvent::ModifiersChanged(next_modifiers) => modifiers = next_modifiers,
-                WindowEvent::ReceivedCharacter(character)
-                    if !modifiers.ctrl() && !character.is_control() =>
-                {
-                    let mut buffer = [0; 4];
-                    let text = character.encode_utf8(&mut buffer);
-                    let _ = terminal.input_tx.send(text.as_bytes().to_vec());
-                }
-                WindowEvent::KeyboardInput { input, .. }
-                    if input.state == ElementState::Pressed =>
-                {
-                    if let Some(bytes) = key_bytes(input, modifiers) {
-                        let _ = terminal.input_tx.send(bytes);
-                    }
-                }
-                _ => {}
-            },
+            }
             Event::RedrawRequested(_) => {
                 draw_terminal(
                     pixels.frame_mut(),
@@ -115,4 +114,40 @@ pub fn run() -> Result<()> {
             _ => {}
         }
     });
+}
+
+/// Processes all pending PTY output and schedules a redraw when output arrives.
+fn drain_terminal_output(output_rx: &Receiver<Vec<u8>>, parser: &mut Parser, window: &Window) {
+    while let Ok(bytes) = output_rx.try_recv() {
+        parser.process(&bytes);
+        window.request_redraw();
+    }
+}
+
+/// Resizes both pixel surfaces, reporting failures before asking the loop to exit.
+fn resize_framebuffer(pixels: &mut Pixels, width: u32, height: u32) -> bool {
+    if let Err(error) = pixels.resize_surface(width, height) {
+        eprintln!("resize surface failed: {error}");
+        return false;
+    }
+
+    if let Err(error) = pixels.resize_buffer(width, height) {
+        eprintln!("resize buffer failed: {error}");
+        return false;
+    }
+
+    true
+}
+
+/// Applies a new terminal size to the parser and PTY session.
+fn resize_terminal(resize_tx: &Sender<TerminalSize>, parser: &mut Parser, size: TerminalSize) {
+    parser.set_size(size.rows, size.cols);
+    let _ = resize_tx.send(size);
+}
+
+/// Encodes one printable character and sends it to the terminal input stream.
+fn send_character_input(input_tx: &Sender<Vec<u8>>, character: char) {
+    let mut buffer = [0; 4];
+    let text = character.encode_utf8(&mut buffer);
+    let _ = input_tx.send(text.as_bytes().to_vec());
 }
